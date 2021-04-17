@@ -198,7 +198,7 @@ The available attributes depend on the model. The following list gives an overvi
 | product_id: | Philips product ID | 85bc26fae62611e8a1e3061302926720 |
 | device_id: | Philips device ID | 3c84c6c8123311ebb1ae8e3584d00715 |
 | software_version: | Installed software version on device | 0.2.1 |
-| wifi_version: | Installed WIFI version on device | ´AWS_Philips_AIR@62.1´ |
+| wifi_version: | Installed WIFI version on device | <pre>AWS_Philips_AIR@62.1</pre> |
 | error_code: | Philips error code | 49408 |
 | error: | Error in clear text | no water |
 | child_lock: | State of child lock setting | false |
