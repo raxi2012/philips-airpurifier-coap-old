@@ -1,8 +1,13 @@
 {
   "domain": "philips_airpurifier_coap",
   "name": "Philips AirPurifier (with CoAP)",
+<<<<<<< HEAD
   "version": "0.8.0-b1",
   "documentation": "https://github.com/kongo09/philips-airpurifier-coap",
+=======
+  "version": "0.7.0",
+  "documentation": "https://github.com/betaboon/philips-airpurifier-coap",
+>>>>>>> upstream/master
   "dependencies": [],
   "codeowners": ["@kongo09"],
   "requirements": [
