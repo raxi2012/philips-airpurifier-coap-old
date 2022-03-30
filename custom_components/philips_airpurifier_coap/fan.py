@@ -1,79 +1,54 @@
 """Philips Air Purifier & Humidifier"""
-import asyncio
-import logging
+from __future__ import annotations
+
 from datetime import timedelta
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Union,
-)
+import logging
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from aioairctrl import CoAPClient
+import voluptuous as vol
 
 from homeassistant.components.fan import (
-    FanEntity,
-    PLATFORM_SCHEMA,
     SUPPORT_PRESET_MODE,
+    SUPPORT_SET_SPEED,
+    FanEntity,
 )
 from homeassistant.components.light import ATTR_BRIGHTNESS
-from homeassistant.const import (
-    ATTR_ENTITY_ID,
-    ATTR_TEMPERATURE,
-    CONF_HOST,
-    CONF_ICON,
-    CONF_NAME,
-)
+from homeassistant.const import ATTR_ENTITY_ID, CONF_HOST, CONF_ICON, CONF_NAME
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-    HomeAssistantType,
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from homeassistant.util.percentage import (
+    ordered_list_item_to_percentage,
+    percentage_to_ordered_list_item,
 )
-import voluptuous as vol
-from aioairctrl import CoAPClient
 
+from . import Coordinator, PhilipsEntity
 from .const import (
-    ATTR_AIR_QUALITY_INDEX,
     ATTR_CHILD_LOCK,
     ATTR_DEVICE_ID,
     ATTR_DEVICE_VERSION,
     ATTR_DISPLAY_BACKLIGHT,
     ATTR_ERROR,
     ATTR_ERROR_CODE,
-    ATTR_FILTER_ACTIVE_CARBON_REMAINING,
-    ATTR_FILTER_ACTIVE_CARBON_REMAINING_RAW,
-    ATTR_FILTER_ACTIVE_CARBON_TYPE,
-    ATTR_FILTER_HEPA_REMAINING,
-    ATTR_FILTER_HEPA_REMAINING_RAW,
-    ATTR_FILTER_HEPA_TYPE,
-    ATTR_FILTER_PRE_REMAINING,
-    ATTR_FILTER_PRE_REMAINING_RAW,
-    ATTR_FILTER_WICK_REMAINING,
-    ATTR_FILTER_WICK_REMAINING_RAW,
     ATTR_FUNCTION,
-    ATTR_HUMIDITY,
     ATTR_HUMIDITY_TARGET,
-    ATTR_INDOOR_ALLERGEN_INDEX,
     ATTR_LANGUAGE,
     ATTR_LIGHT_BRIGHTNESS,
     ATTR_MODEL_ID,
     ATTR_NAME,
-    ATTR_PM25,
     ATTR_PREFERRED_INDEX,
     ATTR_PRODUCT_ID,
     ATTR_RUNTIME,
     ATTR_SOFTWARE_VERSION,
-    ATTR_TOTAL_VOLATILE_ORGANIC_COMPOUNDS,
     ATTR_TYPE,
-    ATTR_WATER_LEVEL,
     ATTR_WIFI_VERSION,
     CONF_MODEL,
-    DATA_KEY,
-    DEFAULT_ICON,
-    DEFAULT_NAME,
+    DATA_KEY_CLIENT,
+    DATA_KEY_COORDINATOR,
+    DATA_KEY_FAN,
     DOMAIN,
     FUNCTION_PURIFICATION,
     FUNCTION_PURIFICATION_HUMIDIFICATION,
@@ -87,7 +62,6 @@ from .const import (
     MODEL_AC3829,
     MODEL_AC3858,
     MODEL_AC4236,
-    PHILIPS_AIR_QUALITY_INDEX,
     PHILIPS_CHILD_LOCK,
     PHILIPS_DEVICE_ID,
     PHILIPS_DEVICE_VERSION,
@@ -95,23 +69,14 @@ from .const import (
     PHILIPS_DISPLAY_BACKLIGHT_MAP,
     PHILIPS_ERROR_CODE,
     PHILIPS_ERROR_CODE_MAP,
-    PHILIPS_FILTER_ACTIVE_CARBON_REMAINING,
-    PHILIPS_FILTER_ACTIVE_CARBON_TYPE,
-    PHILIPS_FILTER_HEPA_REMAINING,
-    PHILIPS_FILTER_HEPA_TYPE,
-    PHILIPS_FILTER_PRE_REMAINING,
-    PHILIPS_FILTER_WICK_REMAINING,
     PHILIPS_FUNCTION,
     PHILIPS_FUNCTION_MAP,
-    PHILIPS_HUMIDITY,
     PHILIPS_HUMIDITY_TARGET,
-    PHILIPS_INDOOR_ALLERGEN_INDEX,
     PHILIPS_LANGUAGE,
     PHILIPS_LIGHT_BRIGHTNESS,
     PHILIPS_MODE,
     PHILIPS_MODEL_ID,
     PHILIPS_NAME,
-    PHILIPS_PM25,
     PHILIPS_POWER,
     PHILIPS_PREFERRED_INDEX,
     PHILIPS_PREFERRED_INDEX_MAP,
@@ -119,21 +84,8 @@ from .const import (
     PHILIPS_RUNTIME,
     PHILIPS_SOFTWARE_VERSION,
     PHILIPS_SPEED,
-    PHILIPS_TEMPERATURE,
-    PHILIPS_TOTAL_VOLATILE_ORGANIC_COMPOUNDS,
     PHILIPS_TYPE,
-    PHILIPS_WATER_LEVEL,
     PHILIPS_WIFI_VERSION,
-    SERVICE_SET_CHILD_LOCK_OFF,
-    SERVICE_SET_CHILD_LOCK_ON,
-    SERVICE_SET_DISPLAY_BACKLIGHT_OFF,
-    SERVICE_SET_DISPLAY_BACKLIGHT_ON,
-    SERVICE_SET_FUNCTION,
-    SERVICE_SET_HUMIDITY_TARGET,
-    SERVICE_SET_LIGHT_BRIGHTNESS,
-    PRESET_MODE_SPEED_1,
-    PRESET_MODE_SPEED_2,
-    PRESET_MODE_SPEED_3,
     PRESET_MODE_ALLERGEN,
     PRESET_MODE_AUTO,
     PRESET_MODE_BACTERIA,
@@ -141,43 +93,35 @@ from .const import (
     PRESET_MODE_NIGHT,
     PRESET_MODE_SLEEP,
     PRESET_MODE_TURBO,
+    SERVICE_SET_CHILD_LOCK_OFF,
+    SERVICE_SET_CHILD_LOCK_ON,
+    SERVICE_SET_DISPLAY_BACKLIGHT_OFF,
+    SERVICE_SET_DISPLAY_BACKLIGHT_ON,
+    SERVICE_SET_FUNCTION,
+    SERVICE_SET_HUMIDITY_TARGET,
+    SERVICE_SET_LIGHT_BRIGHTNESS,
+    SPEED_1,
+    SPEED_2,
+    SPEED_3,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Required(CONF_MODEL): vol.In(
-            [
-                MODEL_AC1214,
-                MODEL_AC2729,
-                MODEL_AC2889,
-                MODEL_AC2939,
-                MODEL_AC2958,
-                MODEL_AC3033,
-                MODEL_AC3059,
-                MODEL_AC3829,
-                MODEL_AC3858,
-                MODEL_AC4236,
-            ]
-        ),
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_ICON, default=DEFAULT_ICON): cv.icon,
-    }
-)
-
 
 async def async_setup_platform(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     config: ConfigType,
     async_add_entities: Callable[[List[Entity], bool], None],
     discovery_info: Optional[DiscoveryInfoType] = None,
 ) -> None:
-    host = config[CONF_HOST]
-    model = config[CONF_MODEL]
-    name = config[CONF_NAME]
-    icon = config[CONF_ICON]
+    if discovery_info is None:
+        return
+
+    host = discovery_info[CONF_HOST]
+    model = discovery_info[CONF_MODEL]
+    name = discovery_info[CONF_NAME]
+    icon = discovery_info[CONF_ICON]
+    data = hass.data[DOMAIN][host]
 
     model_to_class = {
         MODEL_AC1214: PhilipsAC1214,
@@ -194,15 +138,18 @@ async def async_setup_platform(
 
     model_class = model_to_class.get(model)
     if model_class:
-        device = model_class(host=host, model=model, name=name, icon=icon)
-        await device.init()
+        device = model_class(
+            data[DATA_KEY_CLIENT],
+            data[DATA_KEY_COORDINATOR],
+            model=model,
+            name=name,
+            icon=icon,
+        )
     else:
         _LOGGER.error("Unsupported model: %s", model)
-        return False
+        return
 
-    if DATA_KEY not in hass.data:
-        hass.data[DATA_KEY] = []
-    hass.data[DATA_KEY].append(device)
+    data[DATA_KEY_FAN] = device
     async_add_entities([device], update_before_add=True)
 
     def wrapped_async_register(
@@ -214,7 +161,11 @@ async def async_setup_platform(
         async def service_func_wrapper(service_call):
             service_data = service_call.data.copy()
             entity_id = service_data.pop("entity_id", None)
-            devices = [d for d in hass.data[DATA_KEY] if d.entity_id == entity_id]
+            devices = [
+                d
+                for entry in hass.data[DOMAIN].values()
+                if (d := entry[DATA_KEY_FAN]).entity_id == entity_id
+            ]
             for d in devices:
                 device_service_func = getattr(d, service_func.__name__)
                 return await device_service_func(**service_data)
@@ -229,24 +180,19 @@ async def async_setup_platform(
     device._register_services(wrapped_async_register)
 
 
-class PhilipsGenericFan(FanEntity):
-    def __init__(self, host: str, model: str, name: str, icon: str) -> None:
-        self._host = host
+class PhilipsGenericFan(PhilipsEntity, FanEntity):
+    def __init__(
+        self,
+        coordinator: Coordinator,
+        model: str,
+        name: str,
+        icon: str,
+    ) -> None:
+        super().__init__(coordinator)
         self._model = model
         self._name = name
         self._icon = icon
-        self._available = False
-        self._state = None
         self._unique_id = None
-
-    async def init(self) -> None:
-        pass
-
-    async def async_added_to_hass(self) -> None:
-        pass
-
-    async def async_will_remove_from_hass(self) -> None:
-        pass
 
     def _register_services(self, async_register) -> None:
         for cls in reversed(self.__class__.__mro__):
@@ -268,10 +214,6 @@ class PhilipsGenericFan(FanEntity):
     @property
     def icon(self) -> str:
         return self._icon
-
-    @property
-    def available(self) -> bool:
-        return self._available
 
 
 class Timer:
@@ -322,10 +264,20 @@ class Timer:
 
 class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
     AVAILABLE_PRESET_MODES = {}
+    AVAILABLE_SPEEDS = {}
     AVAILABLE_ATTRIBUTES = []
 
-    def __init__(self, host: str, model: str, name: str, icon: str) -> None:
-        super().__init__(host, model, name, icon)
+    def __init__(
+        self,
+        client: CoAPClient,
+        coordinator: Coordinator,
+        model: str,
+        name: str,
+        icon: str,
+    ) -> None:
+        super().__init__(coordinator, model, name, icon)
+        self._client = client
+
         self._device_status = None
         self._timer: Timer = Timer(70, self.reset_connection, False) # Maybe use response.opts.max_age field here, instead of hardcoding?
         self._connecting_timeout = Timer(20, self.stopConnectingAttempt, False)
@@ -336,6 +288,10 @@ class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
         self._preset_modes = []
         self._available_preset_modes = {}
         self._collect_available_preset_modes()
+
+        self._speeds = []
+        self._available_speeds = {}
+        self._collect_available_speeds()
 
         self._available_attributes = []
         self._collect_available_attributes()
@@ -366,10 +322,8 @@ class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
         self._client = await CoAPClient.create(self._host)
         self._observer_task = None
         try:
-            status = await self._client.get_status()
-            device_id = status[PHILIPS_DEVICE_ID]
+            device_id = self._device_status[PHILIPS_DEVICE_ID]
             self._unique_id = f"{self._model}-{device_id}"
-            self._device_status = status
         except Exception as e:
             _LOGGER.error("Failed retrieving unique_id: %s", e)
             raise PlatformNotReady
@@ -405,6 +359,14 @@ class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
             preset_modes.update(cls_preset_modes)
         self._available_preset_modes = preset_modes
         self._preset_modes = list(self._available_preset_modes.keys())
+
+    def _collect_available_speeds(self):
+        speeds = {}
+        for cls in reversed(self.__class__.__mro__):
+            cls_speeds = getattr(cls, "AVAILABLE_SPEEDS", {})
+            speeds.update(cls_speeds)
+        self._available_speeds = speeds
+        self._speeds = list(self._available_speeds.keys())
 
     def _collect_available_attributes(self):
         attributes = []
@@ -446,15 +408,21 @@ class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
     ):
         if preset_mode:
             await self.async_set_preset_mode(preset_mode)
-        else:
-            await self._client.set_control_value(PHILIPS_POWER, "1")
+            return
+        if percentage:
+            await self.async_set_percentage(percentage)
+            return
+        await self._client.set_control_value(PHILIPS_POWER, "1")
 
     async def async_turn_off(self, **kwargs) -> None:
         await self._client.set_control_value(PHILIPS_POWER, "0")
 
     @property
     def supported_features(self) -> int:
-        return SUPPORT_PRESET_MODE
+        features = SUPPORT_PRESET_MODE
+        if self._speeds:
+            features |= SUPPORT_SET_SPEED
+        return features
 
     @property
     def preset_modes(self) -> Optional[List[str]]:
@@ -474,6 +442,28 @@ class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
         status_pattern = self._available_preset_modes.get(preset_mode)
         if status_pattern:
             await self._client.set_control_values(data=status_pattern)
+
+    @property
+    def speed_count(self) -> int:
+        return len(self._speeds)
+
+    @property
+    def percentage(self) -> Optional[int]:
+        for speed, status_pattern in self._available_speeds.items():
+            for k, v in status_pattern.items():
+                if self._device_status.get(k) != v:
+                    break
+            else:
+                return ordered_list_item_to_percentage(self._speeds, speed)
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        if percentage == 0:
+            await self.async_turn_off()
+        else:
+            speed = percentage_to_ordered_list_item(self._speeds, percentage)
+            status_pattern = self._available_speeds.get(speed)
+            if status_pattern:
+                await self._client.set_control_values(data=status_pattern)
 
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
@@ -500,6 +490,7 @@ class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
 
 class PhilipsGenericCoAPFan(PhilipsGenericCoAPFanBase):
     AVAILABLE_PRESET_MODES = {}
+    AVAILABLE_SPEEDS = {}
 
     AVAILABLE_ATTRIBUTES = [
         # device information
@@ -519,32 +510,8 @@ class PhilipsGenericCoAPFan(PhilipsGenericCoAPFanBase):
         (ATTR_LIGHT_BRIGHTNESS, PHILIPS_LIGHT_BRIGHTNESS),
         (ATTR_DISPLAY_BACKLIGHT, PHILIPS_DISPLAY_BACKLIGHT, PHILIPS_DISPLAY_BACKLIGHT_MAP),
         (ATTR_PREFERRED_INDEX, PHILIPS_PREFERRED_INDEX, PHILIPS_PREFERRED_INDEX_MAP),
-        # filter information
-        (
-            ATTR_FILTER_PRE_REMAINING,
-            PHILIPS_FILTER_PRE_REMAINING,
-            lambda x, _: str(timedelta(hours=x)),
-        ),
-        (ATTR_FILTER_PRE_REMAINING_RAW, PHILIPS_FILTER_PRE_REMAINING),
-        (ATTR_FILTER_HEPA_TYPE, PHILIPS_FILTER_HEPA_TYPE),
-        (
-            ATTR_FILTER_HEPA_REMAINING,
-            PHILIPS_FILTER_HEPA_REMAINING,
-            lambda x, _: str(timedelta(hours=x)),
-        ),
-        (ATTR_FILTER_HEPA_REMAINING_RAW, PHILIPS_FILTER_HEPA_REMAINING),
-        (ATTR_FILTER_ACTIVE_CARBON_TYPE, PHILIPS_FILTER_ACTIVE_CARBON_TYPE),
-        (
-            ATTR_FILTER_ACTIVE_CARBON_REMAINING,
-            PHILIPS_FILTER_ACTIVE_CARBON_REMAINING,
-            lambda x, _: str(timedelta(hours=x)),
-        ),
-        (ATTR_FILTER_ACTIVE_CARBON_REMAINING_RAW, PHILIPS_FILTER_ACTIVE_CARBON_REMAINING),
         # device sensors
         (ATTR_RUNTIME, PHILIPS_RUNTIME, lambda x, _: str(timedelta(seconds=round(x / 1000)))),
-        (ATTR_AIR_QUALITY_INDEX, PHILIPS_AIR_QUALITY_INDEX),
-        (ATTR_INDOOR_ALLERGEN_INDEX, PHILIPS_INDOOR_ALLERGEN_INDEX),
-        (ATTR_PM25, PHILIPS_PM25),
     ]
 
     SERVICE_SCHEMA_SET_LIGHT_BRIGHTNESS = vol.Schema(
@@ -598,29 +565,10 @@ class PhilipsGenericCoAPFan(PhilipsGenericCoAPFanBase):
         await self._client.set_control_value(PHILIPS_LIGHT_BRIGHTNESS, brightness)
 
 
-class PhilipsTVOCMixin(PhilipsGenericCoAPFanBase):
-    AVAILABLE_ATTRIBUTES = [
-        (ATTR_TOTAL_VOLATILE_ORGANIC_COMPOUNDS, PHILIPS_TOTAL_VOLATILE_ORGANIC_COMPOUNDS),
-    ]
-
-
-class PhilipsFilterWickMixin(PhilipsGenericCoAPFanBase):
-    AVAILABLE_ATTRIBUTES = [
-        (
-            ATTR_FILTER_WICK_REMAINING,
-            PHILIPS_FILTER_WICK_REMAINING,
-            lambda x, _: str(timedelta(hours=x)),
-        ),
-        (ATTR_FILTER_WICK_REMAINING_RAW, PHILIPS_FILTER_WICK_REMAINING),
-    ]
-
-
 class PhilipsHumidifierMixin(PhilipsGenericCoAPFanBase):
     AVAILABLE_ATTRIBUTES = [
         (ATTR_FUNCTION, PHILIPS_FUNCTION, PHILIPS_FUNCTION_MAP),
-        (ATTR_HUMIDITY, PHILIPS_HUMIDITY),
         (ATTR_HUMIDITY_TARGET, PHILIPS_HUMIDITY_TARGET),
-        (ATTR_TEMPERATURE, PHILIPS_TEMPERATURE),
     ]
 
     SERVICE_SCHEMA_SET_FUNCTION = vol.Schema(
@@ -669,65 +617,61 @@ class PhilipsHumidifierMixin(PhilipsGenericCoAPFanBase):
         await self._client.set_control_value(PHILIPS_HUMIDITY_TARGET, humidity_target)
 
 
-class PhilipsWaterLevelMixin(PhilipsGenericCoAPFanBase):
-    AVAILABLE_ATTRIBUTES = [
-        (
-            ATTR_WATER_LEVEL,
-            PHILIPS_WATER_LEVEL,
-            lambda x, y: 0 if y.get("err") in [32768, 49408] else x,
-        ),
-    ]
-
-
 # TODO consolidate these classes as soon as we see a proper pattern
 class PhilipsAC1214(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
-        PRESET_MODE_SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
         PRESET_MODE_ALLERGEN: {PHILIPS_POWER: "1", PHILIPS_MODE: "A"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "P"},
         PRESET_MODE_NIGHT: {PHILIPS_POWER: "1", PHILIPS_MODE: "N"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T", PHILIPS_SPEED: "t"},
     }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
+        SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
+    }
 
 
 class PhilipsAC2729(
-    PhilipsWaterLevelMixin,
     PhilipsHumidifierMixin,
-    PhilipsFilterWickMixin,
     PhilipsGenericCoAPFan,
 ):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
-        PRESET_MODE_SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
         PRESET_MODE_ALLERGEN: {PHILIPS_POWER: "1", PHILIPS_MODE: "A"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "P"},
         PRESET_MODE_NIGHT: {PHILIPS_POWER: "1", PHILIPS_MODE: "S", PHILIPS_SPEED: "s"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "t"},
     }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
+        SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
+    }
 
 
 class PhilipsAC2889(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
-        PRESET_MODE_SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
         PRESET_MODE_ALLERGEN: {PHILIPS_POWER: "1", PHILIPS_MODE: "A"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "P"},
         PRESET_MODE_BACTERIA: {PHILIPS_POWER: "1", PHILIPS_MODE: "B"},
         PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "s"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "t"},
     }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
+        SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
+    }
 
-class PhilipsAC2939(PhilipsTVOCMixin, PhilipsGenericCoAPFan):
+
+class PhilipsAC2939(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "AG"},
         PRESET_MODE_GENTLE: {PHILIPS_POWER: "1", PHILIPS_MODE: "GT"},
         PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "S"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T"},
     }
+
 
 class PhilipsAC2958(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
@@ -737,52 +681,64 @@ class PhilipsAC2958(PhilipsGenericCoAPFan):
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T"},
     }
 
-class PhilipsAC3033(PhilipsTVOCMixin, PhilipsGenericCoAPFan):
+
+class PhilipsAC3033(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "AG"},
         PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "S", PHILIPS_SPEED: "s"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T", PHILIPS_SPEED: "t"},
     }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
+    }
 
-class PhilipsAC3059(PhilipsTVOCMixin, PhilipsGenericCoAPFan):
+
+class PhilipsAC3059(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "AG"},
         PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "S", PHILIPS_SPEED: "s"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T", PHILIPS_SPEED: "t"},
     }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
+    }
 
 
-class PhilipsAC3829(PhilipsHumidifierMixin, PhilipsFilterWickMixin, PhilipsGenericCoAPFan):
+class PhilipsAC3829(PhilipsHumidifierMixin, PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
-        PRESET_MODE_SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
         PRESET_MODE_ALLERGEN: {PHILIPS_POWER: "1", PHILIPS_MODE: "A"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "P"},
         PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "S", PHILIPS_SPEED: "s"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "t"},
     }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
+        SPEED_3: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "3"},
+    }
 
 
-class PhilipsAC3858(PhilipsTVOCMixin, PhilipsGenericCoAPFan):
+class PhilipsAC3858(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "AG"},
         PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "S", PHILIPS_SPEED: "s"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T", PHILIPS_SPEED: "t"},
     }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
+    }
 
 
-class PhilipsAC4236(PhilipsTVOCMixin, PhilipsGenericCoAPFan):
+class PhilipsAC4236(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
-        PRESET_MODE_SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
-        PRESET_MODE_SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "AG"},
         PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "S", PHILIPS_SPEED: "s"},
         PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T", PHILIPS_SPEED: "t"},
+    }
+    AVAILABLE_SPEEDS = {
+        SPEED_1: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "1"},
+        SPEED_2: {PHILIPS_POWER: "1", PHILIPS_MODE: "M", PHILIPS_SPEED: "2"},
     }

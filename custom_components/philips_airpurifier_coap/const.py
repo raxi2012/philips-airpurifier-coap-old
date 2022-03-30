@@ -1,5 +1,23 @@
+"""Constants for Philips AirPurifier integration."""
+from __future__ import annotations
+
+from homeassistant.components.sensor import ATTR_STATE_CLASS, STATE_CLASS_MEASUREMENT
+from homeassistant.const import (
+    ATTR_DEVICE_CLASS,
+    ATTR_ICON,
+    ATTR_TEMPERATURE,
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    DEVICE_CLASS_HUMIDITY,
+    DEVICE_CLASS_TEMPERATURE,
+)
+
+from .model import FilterDescription, SensorDescription
+
 DOMAIN = "philips_airpurifier_coap"
-DATA_KEY = "fan.philips_airpurifier"
+
+DATA_KEY_CLIENT = "client"
+DATA_KEY_COORDINATOR = "coordinator"
+DATA_KEY_FAN = "fan"
 
 DEFAULT_NAME = "Philips AirPurifier"
 DEFAULT_ICON = "mdi:air-purifier"
@@ -19,9 +37,9 @@ MODEL_AC3829 = "ac3829"
 MODEL_AC3858 = "ac3858"
 MODEL_AC4236 = "ac4236"
 
-PRESET_MODE_SPEED_1 = "1"
-PRESET_MODE_SPEED_2 = "2"
-PRESET_MODE_SPEED_3 = "3"
+SPEED_1 = "1"
+SPEED_2 = "2"
+SPEED_3 = "3"
 PRESET_MODE_ALLERGEN = "allergen"
 PRESET_MODE_AUTO = "auto"
 PRESET_MODE_BACTERIA = "bacteria"
@@ -48,20 +66,21 @@ ATTR_DEVICE_VERSION = "device_version"
 ATTR_DISPLAY_BACKLIGHT = "display_backlight"
 ATTR_ERROR_CODE = "error_code"
 ATTR_ERROR = "error"
-ATTR_FILTER_ACTIVE_CARBON_REMAINING = "filter_active_carbon_remaining"
-ATTR_FILTER_ACTIVE_CARBON_REMAINING_RAW = "filter_active_carbon_remaining_raw"
-ATTR_FILTER_ACTIVE_CARBON_TYPE = "filter_active_carbon_type"
-ATTR_FILTER_HEPA_REMAINING = "filter_hepa_remaining"
-ATTR_FILTER_HEPA_REMAINING_RAW = "filter_hepa_remaining_raw"
-ATTR_FILTER_HEPA_TYPE = "filter_hepa_type"
-ATTR_FILTER_PRE_REMAINING = "filter_pre_remaining"
-ATTR_FILTER_PRE_REMAINING_RAW = "filter_pre_remaining_raw"
-ATTR_FILTER_WICK_REMAINING = "filter_wick_remaining"
-ATTR_FILTER_WICK_REMAINING_RAW = "filter_wick_remaining_raw"
+ATTR_RAW = "raw"
+ATTR_TOTAL = "total"
+ATTR_TIME_REMAINING = "time_remaining"
+ATTR_TYPE = "type"
+ATTR_FILTER_PRE = "filter_pre"
+ATTR_FILTER_HEPA = "filter_hepa"
+ATTR_FILTER_ACTIVE_CARBON = "filter_active_carbon"
+ATTR_FILTER_WICK = "wick"
 ATTR_FUNCTION = "function"
 ATTR_HUMIDITY = "humidity"
 ATTR_HUMIDITY_TARGET = "humidity_target"
 ATTR_INDOOR_ALLERGEN_INDEX = "indoor_allergen_index"
+ATTR_LABEL = "label"
+ATTR_UNIT = "unit"
+ATTR_VALUE = "value"
 ATTR_LANGUAGE = "language"
 ATTR_LIGHT_BRIGHTNESS = "light_brightness"
 ATTR_MODE = "mode"
@@ -77,6 +96,11 @@ ATTR_TOTAL_VOLATILE_ORGANIC_COMPOUNDS = "total_volatile_organic_compounds"
 ATTR_TYPE = "type"
 ATTR_WATER_LEVEL = "water_level"
 ATTR_WIFI_VERSION = "wifi_version"
+ATTR_PREFIX = "prefix"
+ATTR_POSTFIX = "postfix"
+
+LEVEL = "Level"
+INDEX = "Index"
 
 PHILIPS_AIR_QUALITY_INDEX = "aqit"
 PHILIPS_CHILD_LOCK = "cl"
@@ -84,12 +108,11 @@ PHILIPS_DEVICE_ID = "DeviceId"
 PHILIPS_DEVICE_VERSION = "DeviceVersion"
 PHILIPS_DISPLAY_BACKLIGHT = "uil"
 PHILIPS_ERROR_CODE = "err"
-PHILIPS_FILTER_ACTIVE_CARBON_REMAINING = "fltsts2"
-PHILIPS_FILTER_ACTIVE_CARBON_TYPE = "fltt2"
-PHILIPS_FILTER_HEPA_REMAINING = "fltsts1"
-PHILIPS_FILTER_HEPA_TYPE = "fltt1"
-PHILIPS_FILTER_PRE_REMAINING = "fltsts0"
-PHILIPS_FILTER_WICK_REMAINING = "wicksts"
+PHILIPS_FILTER_PREFIX = "flt"
+PHILIPS_FILTER_WICK_PREFIX = "wick"
+PHILIPS_FILTER_STATUS = "sts"
+PHILIPS_FILTER_TOTAL = "total"
+PHILIPS_FILTER_TYPE = "t"
 PHILIPS_FUNCTION = "func"
 PHILIPS_HUMIDITY = "rh"
 PHILIPS_HUMIDITY_TARGET = "rhset"
@@ -130,4 +153,64 @@ PHILIPS_ERROR_CODE_MAP = {
     49153: "pre-filter must be cleaned",
     49155: "pre-filter must be cleaned",
     49408: "no water",
+}
+
+SENSOR_TYPES: dict[str, SensorDescription] = {
+    # filter information
+    PHILIPS_WATER_LEVEL: {
+        ATTR_ICON: "mdi:water",
+        ATTR_LABEL: ATTR_WATER_LEVEL,
+        ATTR_VALUE: lambda value, status: 0 if status.get("err") in [32768, 49408] else value,
+    },
+    # device sensors
+    PHILIPS_AIR_QUALITY_INDEX: {
+        ATTR_LABEL: ATTR_AIR_QUALITY_INDEX,
+    },
+    PHILIPS_INDOOR_ALLERGEN_INDEX: {
+        ATTR_ICON: "mdi:blur",
+        ATTR_LABEL: ATTR_INDOOR_ALLERGEN_INDEX,
+        ATTR_UNIT: INDEX,
+        ATTR_STATE_CLASS: STATE_CLASS_MEASUREMENT,
+    },
+    PHILIPS_PM25: {
+        ATTR_ICON: "mdi:blur",
+        ATTR_LABEL: "PM2.5",
+        ATTR_UNIT: CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+        ATTR_STATE_CLASS: STATE_CLASS_MEASUREMENT,
+    },
+    PHILIPS_TOTAL_VOLATILE_ORGANIC_COMPOUNDS: {
+        ATTR_ICON: "mdi:blur",
+        ATTR_LABEL: ATTR_TOTAL_VOLATILE_ORGANIC_COMPOUNDS,
+        ATTR_UNIT: LEVEL,
+        ATTR_STATE_CLASS: STATE_CLASS_MEASUREMENT,
+    },
+    PHILIPS_HUMIDITY: {
+        ATTR_DEVICE_CLASS: DEVICE_CLASS_HUMIDITY,
+        ATTR_LABEL: ATTR_HUMIDITY,
+        ATTR_STATE_CLASS: STATE_CLASS_MEASUREMENT,
+    },
+    PHILIPS_TEMPERATURE: {
+        ATTR_DEVICE_CLASS: DEVICE_CLASS_TEMPERATURE,
+        ATTR_LABEL: ATTR_TEMPERATURE,
+        ATTR_STATE_CLASS: STATE_CLASS_MEASUREMENT,
+    },
+}
+
+FILTER_TYPES: dict[str, FilterDescription] = {
+    ATTR_FILTER_PRE: {
+        ATTR_PREFIX: PHILIPS_FILTER_PREFIX,
+        ATTR_POSTFIX: "0",
+    },
+    ATTR_FILTER_HEPA: {
+        ATTR_PREFIX: PHILIPS_FILTER_PREFIX,
+        ATTR_POSTFIX: "1",
+    },
+    ATTR_FILTER_ACTIVE_CARBON: {
+        ATTR_PREFIX: PHILIPS_FILTER_PREFIX,
+        ATTR_POSTFIX: "2",
+    },
+    ATTR_FILTER_WICK: {
+        ATTR_PREFIX: PHILIPS_FILTER_WICK_PREFIX,
+        ATTR_POSTFIX: "",
+    },
 }
