@@ -19,7 +19,8 @@ Add `https://github.com/kongo09/philips-airpurifier-coap` as custom-repository i
 Add the following to your `configuration.yaml`:
 
 ```yaml
-philips_airpurifier_coap:
+fan:
+  platform: philips_airpurifier_coap
   host: 192.168.0.17
   model: ac4236
 ```
@@ -31,14 +32,17 @@ philips_airpurifier_coap:
 Add the following to your `configuration.yaml`:
 
 ```yaml
-philips_airpurifier_coap:
-  - host: 192.168.0.100
+fan:
+  - platform: philips_airpurifier_coap
+    host: 192.168.0.100
     model: ac1214
 
-  - host: 192.168.0.101
+  - platform: philips_airpurifier_coap
+    host: 192.168.0.101
     model: ac1214
 
-  - host: 192.168.0.102
+  - platform: philips_airpurifier_coap
+    host: 192.168.0.102
     model: ac1214
 ```
 
@@ -48,6 +52,7 @@ philips_airpurifier_coap:
 ## Configuration variables:
 Field | Value | Necessity | Description
 --- | --- | --- | ---
+platform | `philips_airpurifier_coap` | *Required* | The platform name.
 host | 192.168.0.17 | *Required* | IP address of the Purifier.
 model | ac4236 | *Required* | Model of the Purifier.
 name | Philips Air Purifier | Optional | Name of the Fan.
