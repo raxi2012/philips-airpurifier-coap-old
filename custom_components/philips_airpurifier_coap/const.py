@@ -1,5 +1,20 @@
+"""Constants for Philips AirPurifier integration."""
+from __future__ import annotations
+
+from homeassistant.components.sensor import ATTR_STATE_CLASS, STATE_CLASS_MEASUREMENT
+from homeassistant.const import (
+    ATTR_DEVICE_CLASS,
+    ATTR_ICON,
+    ATTR_TEMPERATURE,
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    DEVICE_CLASS_HUMIDITY,
+    DEVICE_CLASS_TEMPERATURE,
+)
 DOMAIN = "philips_airpurifier_coap"
-DATA_KEY = "fan.philips_airpurifier"
+
+DATA_KEY_CLIENT = "client"
+DATA_KEY_COORDINATOR = "coordinator"
+DATA_KEY_FAN = "fan"
 
 DEFAULT_NAME = "Philips AirPurifier"
 DEFAULT_ICON = "mdi:air-purifier"
@@ -13,8 +28,6 @@ MODEL_AC2939 = "ac2939"
 MODEL_AC2958 = "ac2958"
 MODEL_AC3033 = "ac3033"
 MODEL_AC3059 = "ac3059"
-MODEL_AC2958 = "ac2958"
-MODEL_AC3033 = "ac3033"
 MODEL_AC3829 = "ac3829"
 MODEL_AC3858 = "ac3858"
 MODEL_AC4236 = "ac4236"

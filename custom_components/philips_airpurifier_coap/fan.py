@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from datetime import timedelta
+from logging.config import _RootLoggerConfiguration
 from typing import (
     Any,
     Callable,
@@ -10,7 +11,7 @@ from typing import (
     Optional,
     Union,
 )
-
+from homeassistant.core import HomeAssistant
 from homeassistant.components.fan import (
     FanEntity,
     PLATFORM_SCHEMA,
@@ -30,7 +31,6 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.typing import (
     ConfigType,
     DiscoveryInfoType,
-    HomeAssistantType,
 )
 import voluptuous as vol
 from aioairctrl import CoAPClient
@@ -71,7 +71,9 @@ from .const import (
     ATTR_WATER_LEVEL,
     ATTR_WIFI_VERSION,
     CONF_MODEL,
-    DATA_KEY,
+    DATA_KEY_CLIENT,
+    DATA_KEY_COORDINATOR,
+    DATA_KEY_FAN,
     DEFAULT_ICON,
     DEFAULT_NAME,
     DOMAIN,
@@ -169,15 +171,20 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 
 
 async def async_setup_platform(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     config: ConfigType,
     async_add_entities: Callable[[List[Entity], bool], None],
     discovery_info: Optional[DiscoveryInfoType] = None,
 ) -> None:
-    host = config[CONF_HOST]
-    model = config[CONF_MODEL]
-    name = config[CONF_NAME]
-    icon = config[CONF_ICON]
+    if discovery_info is None:
+        _LOGGER.debug("discovery_info is None, returning")
+        return
+
+    host = discovery_info[CONF_HOST]
+    model = discovery_info[CONF_MODEL]
+    name = discovery_info[CONF_NAME]
+    icon = discovery_info[CONF_ICON]
+    data = hass.data[DOMAIN][host]
 
     model_to_class = {
         MODEL_AC1214: PhilipsAC1214,
@@ -194,15 +201,19 @@ async def async_setup_platform(
 
     model_class = model_to_class.get(model)
     if model_class:
-        device = model_class(host=host, model=model, name=name, icon=icon)
-        await device.init()
+        _LOGGER.debug("Setting up model: %s", model)
+        device = model_class(
+            data[DATA_KEY_CLIENT],
+            data[DATA_KEY_COORDINATOR],
+            model=model,
+            name=name,
+            icon=icon
+        )
     else:
         _LOGGER.error("Unsupported model: %s", model)
-        return False
+        return
 
-    if DATA_KEY not in hass.data:
-        hass.data[DATA_KEY] = []
-    hass.data[DATA_KEY].append(device)
+    data[DATA_KEY_FAN] = device
     async_add_entities([device], update_before_add=True)
 
     def wrapped_async_register(
@@ -214,7 +225,11 @@ async def async_setup_platform(
         async def service_func_wrapper(service_call):
             service_data = service_call.data.copy()
             entity_id = service_data.pop("entity_id", None)
-            devices = [d for d in hass.data[DATA_KEY] if d.entity_id == entity_id]
+            devices = [
+                d
+                for entry in hass.data[DOMAIN].values()
+                if ( d := entry[DATA_KEY_FAN]).entity_id == entity_id
+            ]
             for d in devices:
                 device_service_func = getattr(d, service_func.__name__)
                 return await device_service_func(**service_data)
@@ -229,24 +244,21 @@ async def async_setup_platform(
     device._register_services(wrapped_async_register)
 
 
-class PhilipsGenericFan(FanEntity):
-    def __init__(self, host: str, model: str, name: str, icon: str) -> None:
-        self._host = host
+class PhilipsGenericFan(PhilipsEntity, FanEntity):
+    def __init__(
+        self, 
+        coordinator: Coordinator,
+        model: str, 
+        name: str, 
+        icon: str
+    ) -> None:
+        super().__init__(coordinator)
         self._model = model
         self._name = name
         self._icon = icon
         self._available = False
-        self._state = None
+        # self._state = None
         self._unique_id = None
-
-    async def init(self) -> None:
-        pass
-
-    async def async_added_to_hass(self) -> None:
-        pass
-
-    async def async_will_remove_from_hass(self) -> None:
-        pass
 
     def _register_services(self, async_register) -> None:
         for cls in reversed(self.__class__.__mro__):
@@ -324,8 +336,17 @@ class PhilipsGenericCoAPFanBase(PhilipsGenericFan):
     AVAILABLE_PRESET_MODES = {}
     AVAILABLE_ATTRIBUTES = []
 
-    def __init__(self, host: str, model: str, name: str, icon: str) -> None:
-        super().__init__(host, model, name, icon)
+    def __init__(
+        self,
+        client: CoaPClient,
+        coordinator: Coordinator,
+        model: str,
+        name: str,
+        icon: str
+    ) -> None:
+        super().__init__(coordinator, model, name, icon)
+        self._client = client
+        
         self._device_status = None
         self._timer: Timer = Timer(70, self.reset_connection, False) # Maybe use response.opts.max_age field here, instead of hardcoding?
         self._connecting_timeout = Timer(20, self.stopConnectingAttempt, False)
