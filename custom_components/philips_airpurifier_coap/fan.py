@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from datetime import timedelta
-from logging.config import _RootLoggerConfiguration
+# from logging.config import _RootLoggerConfiguration
 from typing import (
     Any,
     Callable,
