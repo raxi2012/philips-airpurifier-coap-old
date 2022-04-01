@@ -35,6 +35,8 @@ from homeassistant.helpers.typing import (
 import voluptuous as vol
 from aioairctrl import CoAPClient
 
+from . import Coordinator, PhilipsEntity
+
 from .const import (
     ATTR_AIR_QUALITY_INDEX,
     ATTR_CHILD_LOCK,
