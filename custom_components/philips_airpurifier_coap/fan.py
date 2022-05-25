@@ -82,6 +82,7 @@ from .const import (
     MODEL_AC2889,
     MODEL_AC2939,
     MODEL_AC2958,
+    MODEL_AC2959,
     MODEL_AC3033,
     MODEL_AC3059,
     MODEL_AC3829,
@@ -155,6 +156,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
                 MODEL_AC2889,
                 MODEL_AC2939,
                 MODEL_AC2958,
+                MODEL_AC2959,
                 MODEL_AC3033,
                 MODEL_AC3059,
                 MODEL_AC3829,
@@ -185,6 +187,7 @@ async def async_setup_platform(
         MODEL_AC2889: PhilipsAC2889,
         MODEL_AC2939: PhilipsAC2939,
         MODEL_AC2958: PhilipsAC2958,
+        MODEL_AC2959: PhilipsAC2959,
         MODEL_AC3033: PhilipsAC3033,
         MODEL_AC3059: PhilipsAC3059,
         MODEL_AC3829: PhilipsAC3829,
@@ -730,6 +733,14 @@ class PhilipsAC2939(PhilipsTVOCMixin, PhilipsGenericCoAPFan):
     }
 
 class PhilipsAC2958(PhilipsGenericCoAPFan):
+    AVAILABLE_PRESET_MODES = {
+        PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "AG"},
+        PRESET_MODE_GENTLE: {PHILIPS_POWER: "1", PHILIPS_MODE: "GT"},
+        PRESET_MODE_SLEEP: {PHILIPS_POWER: "1", PHILIPS_MODE: "S"},
+        PRESET_MODE_TURBO: {PHILIPS_POWER: "1", PHILIPS_MODE: "T"},
+    }
+
+class PhilipsAC2959(PhilipsGenericCoAPFan):
     AVAILABLE_PRESET_MODES = {
         PRESET_MODE_AUTO: {PHILIPS_POWER: "1", PHILIPS_MODE: "AG"},
         PRESET_MODE_GENTLE: {PHILIPS_POWER: "1", PHILIPS_MODE: "GT"},
